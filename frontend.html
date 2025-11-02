@@ -1,0 +1,301 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Patient Scheduling - Simple Frontend</title>
+  <style>
+    :root{--bg:#f6f8fb;--card:#ffffff;--muted:#6b7280;--accent:#2563eb;--danger:#ef4444;--radius:12px}
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; background:var(--bg); color:#0f172a}
+    .wrap{max-width:1000px;margin:36px auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .grid{display:grid;gap:18px}
+    .columns{grid-template-columns:1fr 420px}
+    .card{background:var(--card);border-radius:var(--radius);padding:18px;box-shadow:0 6px 18px rgba(12,18,28,0.06)}form .row{display:flex;gap:10px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+input[type=text], input[type=tel], input[type=date], input[type=time], select, textarea{
+  width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef;background:#fff;font-size:14px}
+textarea{min-height:80px;resize:vertical}
+button{background:var(--accent);color:#fff;padding:10px 14px;border-radius:10px;border:0;font-weight:600;cursor:pointer}
+button.secondary{background:#eef2ff;color:var(--accent);border:1px solid #dbeafe}
+.small{font-size:13px;color:var(--muted)}
+
+.appt-list{display:flex;flex-direction:column;gap:10px}
+.appt{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:10px;border:1px solid #eef2f6}
+.meta{display:flex;gap:12px;align-items:center}
+.pill{font-size:12px;padding:6px 8px;border-radius:999px;border:1px solid #e6eefb}
+.controls{display:flex;gap:8px}
+.btn-ghost{background:transparent;border:1px solid #e6e9ef;padding:8px;border-radius:8px;cursor:pointer}
+
+.empty{padding:20px;text-align:center;color:var(--muted)}
+
+/* responsive */
+@media (min-width:880px){.grid.columns{grid-template-columns:1fr 420px}}
+@media (max-width:879px){.grid.columns{grid-template-columns:1fr} .wrap{padding:12px}}
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Patient Scheduler</h1>
+        <div class="small">Simple HTML/CSS/JS frontend — stores appointments in browser</div>
+      </div>
+      <div class="small">Local-only • No backend • Export / Import available</div>
+    </header><div class="grid columns">
+  <!-- left: appointments + calendar -->
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <strong>Upcoming Appointments</strong>
+      <div>
+        <button id="exportBtn" class="secondary">Export JSON</button>
+        <button id="importBtn" class="secondary">Import</button>
+        <input id="importFile" type="file" accept="application/json" style="display:none" />
+      </div>
+    </div>
+
+    <div id="list" class="appt-list"></div>
+
+    <div id="empty" class="empty">No appointments yet — add one using the form on the right.</div>
+  </section>
+
+  <!-- right: form -->
+  <aside class="card">
+    <strong style="display:block;margin-bottom:8px">Add / Edit Appointment</strong>
+    <form id="apptForm">
+      <input type="hidden" id="apptId" />
+
+      <div style="margin-bottom:10px">
+        <label for="name">Patient name</label>
+        <input id="name" type="text" placeholder="e.g. Rajesh Sharma" required />
+      </div>
+
+      <div style="margin-bottom:10px">
+        <label for="phone">Phone</label>
+        <input id="phone" type="tel" placeholder="10-digit phone" pattern="[0-9]{10}" />
+      </div>
+
+      <div class="row" style="margin-bottom:10px">
+        <div style="flex:1">
+          <label for="date">Date</label>
+          <input id="date" type="date" required />
+        </div>
+        <div style="width:140px">
+          <label for="time">Time</label>
+          <input id="time" type="time" required />
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <label for="doctor">Doctor / Department</label>
+        <select id="doctor">
+          <option value="General">General</option>
+          <option value="Pediatrics">Pediatrics</option>
+          <option value="Orthopedics">Orthopedics</option>
+          <option value="Cardiology">Cardiology</option>
+          <option value="Dermatology">Dermatology</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label for="reason">Reason / Notes</label>
+        <textarea id="reason" placeholder="Optional notes"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button type="submit">Save Appointment</button>
+        <button type="button" id="resetBtn" class="btn-ghost">Reset</button>
+      </div>
+    </form>
+
+    <hr style="margin:16px 0;border:none;border-top:1px solid #f0f2f6" />
+
+    <div>
+      <strong>Quick Filters</strong>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-ghost" id="filterAll">All</button>
+        <button class="btn-ghost" id="filterToday">Today</button>
+        <button class="btn-ghost" id="filterWeek">Next 7 days</button>
+        <button class="btn-ghost" id="clearAll">Clear All</button>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+  </div>  <script>
+    // Simple frontend-only patient scheduler
+    const STORAGE_KEY = 'patient_appointments_v1'
+    let appointments = []
+    let currentFilter = 'all'
+
+    // elements
+    const listEl = document.getElementById('list')
+    const emptyEl = document.getElementById('empty')
+    const form = document.getElementById('apptForm')
+    const apptId = document.getElementById('apptId')
+    const nameIn = document.getElementById('name')
+    const phoneIn = document.getElementById('phone')
+    const dateIn = document.getElementById('date')
+    const timeIn = document.getElementById('time')
+    const doctorIn = document.getElementById('doctor')
+    const reasonIn = document.getElementById('reason')
+
+    const exportBtn = document.getElementById('exportBtn')
+    const importBtn = document.getElementById('importBtn')
+    const importFile = document.getElementById('importFile')
+
+    // init
+    load()
+    render()
+
+    // helpers
+    function uid(){ return 'id_' + Math.random().toString(36).slice(2,9) }
+
+    function load(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY)
+        appointments = raw ? JSON.parse(raw) : []
+      }catch(e){ appointments = [] }
+    }
+
+    function save(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appointments))
+    }
+
+    function render(){
+      const now = new Date()
+      let items = appointments.slice().sort((a,b)=> new Date(a.date+'T'+a.time) - new Date(b.date+'T'+b.time))
+
+      // filtering
+      if(currentFilter === 'today'){
+        const today = now.toISOString().slice(0,10)
+        items = items.filter(i => i.date === today)
+      } else if(currentFilter === 'week'){
+        const end = new Date(now); end.setDate(end.getDate()+7)
+        items = items.filter(i => {
+          const d = new Date(i.date)
+          return d >= new Date(now.toDateString()) && d <= end
+        })
+      }
+
+      listEl.innerHTML = ''
+      if(items.length === 0){ emptyEl.style.display = 'block'; listEl.style.display = 'none' } else { emptyEl.style.display = 'none'; listEl.style.display = 'flex' }
+
+      items.forEach(appt => {
+        const node = document.createElement('div'); node.className = 'appt'
+        const left = document.createElement('div'); left.className = 'meta'
+        const name = document.createElement('div'); name.innerHTML = <strong>${escapeHtml(appt.name)}</strong><div class="small">${escapeHtml(appt.phone||'')}</div>
+        const when = document.createElement('div'); when.className = 'pill'; when.innerText = ${appt.date} ${appt.time}
+        const dept = document.createElement('div'); dept.className = 'pill'; dept.innerText = appt.doctor
+        left.appendChild(name); left.appendChild(when); left.appendChild(dept)
+
+        const right = document.createElement('div'); right.className = 'controls'
+        const edit = document.createElement('button'); edit.className = 'btn-ghost'; edit.innerText = 'Edit'; edit.onclick = ()=> loadIntoForm(appt.id)
+        const del = document.createElement('button'); del.className = 'btn-ghost'; del.innerText = 'Delete'; del.onclick = ()=> removeAppt(appt.id)
+        const copy = document.createElement('button'); copy.className = 'btn-ghost'; copy.innerText = 'Copy'; copy.onclick = ()=> copyToClipboard(appt)
+
+        right.appendChild(edit); right.appendChild(del); right.appendChild(copy)
+
+        node.appendChild(left); node.appendChild(right)
+        listEl.appendChild(node)
+      })
+    }
+
+    // form handlers
+    form.addEventListener('submit', e => {
+      e.preventDefault()
+      const id = apptId.value || uid()
+      const record = {
+        id,
+        name: nameIn.value.trim(),
+        phone: phoneIn.value.trim(),
+        date: dateIn.value,
+        time: timeIn.value,
+        doctor: doctorIn.value,
+        reason: reasonIn.value.trim()
+      }
+
+      // basic validation
+      if(!record.name) return alert('Please enter patient name')
+      if(!record.date || !record.time) return alert('Please choose date and time')
+
+      const exists = appointments.findIndex(a=>a.id===id)
+      if(exists >= 0) appointments[exists] = record
+      else appointments.push(record)
+
+      save(); render(); form.reset(); apptId.value=''
+    })
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{ form.reset(); apptId.value=''; })
+
+    function loadIntoForm(id){
+      const a = appointments.find(x=>x.id===id); if(!a) return
+      apptId.value = a.id
+      nameIn.value = a.name
+      phoneIn.value = a.phone
+      dateIn.value = a.date
+      timeIn.value = a.time
+      doctorIn.value = a.doctor
+      reasonIn.value = a.reason
+      window.scrollTo({top:0,behavior:'smooth'})
+    }
+
+    function removeAppt(id){
+      if(!confirm('Delete this appointment?')) return
+      appointments = appointments.filter(a=>a.id!==id); save(); render()
+    }
+
+    function copyToClipboard(appt){
+      const text = Appointment for ${appt.name} on ${appt.date} at ${appt.time} (${appt.doctor});
+      navigator.clipboard?.writeText(text).then(()=> alert('Copied to clipboard'))
+    }
+
+    // filters
+    document.getElementById('filterAll').addEventListener('click', ()=>{ currentFilter='all'; render() })
+    document.getElementById('filterToday').addEventListener('click', ()=>{ currentFilter='today'; render() })
+    document.getElementById('filterWeek').addEventListener('click', ()=>{ currentFilter='week'; render() })
+
+    document.getElementById('clearAll').addEventListener('click', ()=>{
+      if(!confirm('Clear all appointments from this browser?')) return
+      appointments = []; save(); render()
+    })
+
+    // export / import
+    exportBtn.addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(appointments, null, 2)], {type:'application/json'})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href=url; a.download='appointments.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+    })
+
+    importBtn.addEventListener('click', ()=> importFile.click())
+    importFile.addEventListener('change', async (e)=>{
+      const f = e.target.files[0]; if(!f) return
+      try{
+        const txt = await f.text(); const arr = JSON.parse(txt)
+        if(!Array.isArray(arr)) throw new Error('Invalid file')
+        // merge by id, or add
+        const map = new Map(appointments.map(a=>[a.id,a]))
+        arr.forEach(a=>{ if(a.id && map.has(a.id)) map.set(a.id, a); else map.set(a.id||uid(), a) })
+        appointments = Array.from(map.values())
+        save(); render(); alert('Imported successfully')
+      }catch(err){ alert('Failed to import: '+err.message) }
+      importFile.value=''
+    })
+
+    // small utilities
+    function escapeHtml(s){ if(!s) return ''; return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
+
+    // initial sample data (only if empty)
+    if(appointments.length===0){
+      const today = new Date();
+      const dd = today.toISOString().slice(0,10)
+      appointments.push({id:uid(), name:'Test Patient', phone:'', date:dd, time:'10:30', doctor:'General', reason:'Demo appointment'})
+      save(); render()
+    }
+  </script></body>
+</html>
